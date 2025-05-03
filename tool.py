@@ -71,7 +71,7 @@ class Tools:
             )
             return {
                 "success": False,
-                "response_massage": f"Directory `{path}` does not exist. Reverting to `{self.base_dir}`."
+                "response_message": f"Directory `{path}` does not exist. Reverting to `{self.base_dir}`."
             }
         
         self.base_dir = Path(path).absolute().as_posix()
@@ -89,7 +89,7 @@ class Tools:
         
         return {
             "success": True,
-            "response_massage": f"Changed directory to `{self.base_dir}`"
+            "response_message": f"Changed directory to `{self.base_dir}`"
         }
     
 
@@ -193,7 +193,7 @@ class Tools:
             "results": results,
         }
         if is_exceeded:
-            res["response_massage"] = f"Limit exceeded. Returned {len(results)}/{len(all_files)} files"
+            res["response_message"] = f"Limit exceeded. Returned {len(results)}/{len(all_files)} files"
 
         await __event_emitter__(
             {
