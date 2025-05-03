@@ -4,7 +4,7 @@ author: RJTPP
 author_url: https://github.com/RJTPP
 git_url: https://github.com/RJTPP/open-webui-file-search-tool.git
 repo_url: https://github.com/RJTPP/open-webui-file-search-tool
-version: 0.0.1
+version: 0.0.2-beta
 license: MIT
 
 description: An interactive tool for navigating directories, listing files, searching filenames and content using regex, and reading file contents.
@@ -429,7 +429,7 @@ class Tools:
                 await __event_emitter__({
                     "type": "status",
                     "data": {
-                        "description": f"Time limit exceeded; processed {len(results)} files.",
+                        "description": f"Time limit exceeded. Found {len(results)}/{len(paths)} files containing matches.",
                         "done": True,
                         "hidden": False
                     }
