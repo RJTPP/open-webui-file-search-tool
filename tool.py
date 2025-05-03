@@ -17,6 +17,7 @@ import re
 from pydantic import BaseModel, Field
 from datetime import datetime
 from collections import deque
+import itertools
 
 def pwd():
     return os.getcwd()
@@ -45,7 +46,7 @@ class Tools:
         """
         return { "current_dir": self.base_dir}
 
-    async def change_dir(self, path: str, __event_emitter__=None) -> dict[str, str]:
+    async def change_dir(self, path: str, __event_emitter__=None) -> dict[str, str | bool]:
         """
         Change the current directory. Equivalent to `cd`.
 
@@ -79,7 +80,7 @@ class Tools:
             {
                 "type": "status",
                 "data": {
-                    "description": f"Changed working directory to {self.base_dir}",
+                    "description": f"Changed working directory to {self.base_dir}.",
                     "done": True,
                     "hidden": False,
                 },
@@ -88,15 +89,15 @@ class Tools:
         
         return {
             "success": True,
-            "response_message": f"Changed directory to `{self.base_dir}`"
+            "response_message": f"Changed directory to `{self.base_dir}`."
         }
     
 
-    def get_path_type(self, path: list[str], __event_emitter__=None) -> dict[str, tuple[str, str]]:
+    def get_path_type(self, paths: list[str], __event_emitter__=None) -> dict[str, list[tuple[str, str]]]:
         """
         Get the type of the given path.
 
-        :param path: List of paths or a single path to get the type of.
+        :param paths: List of paths or a single path to get the type of.
         :return: Dict with:
             - 'path_type': List of tuples of (path, type).
         """
@@ -112,7 +113,7 @@ class Tools:
                 file_type = "file"
             return file_type
         
-        return { "path_type": [(p, _sub_get_path_type(p)) for p in path]}
+        return { "path_type": [(p, _sub_get_path_type(p)) for p in paths]}
 
 
     async def list_files(
@@ -120,8 +121,8 @@ class Tools:
         base_dir: str = None,
         show_hidden: bool = False,
         limit: int = -1,
-        abs_path: bool = False,
         start_from: int = 0,
+        abs_path: bool = False,
         __event_emitter__=None,
     ) -> dict[str, list[str] | None]:
         """
@@ -131,7 +132,7 @@ class Tools:
         :param show_hidden: Include hidden files (those starting with '.').
         :param limit: Maximum number of files to return. Set to -1 for no limit.
         :param start_from: Starting index of files to return.
-        :paran abs_path: If true, return absolute paths.
+        :param abs_path: If true, return absolute paths.
         :return: Dict with:
             - 'results': List of files. Sorted alphabetically.
             - 'response_message': Response message.
@@ -143,15 +144,13 @@ class Tools:
         results: list[str] = []
         count = 0
         is_exceeded = False
-
-        if limit is None or limit < 0 or limit > 1000:
-            limit = 1000
-
+        start_time = datetime.now()
+        
         await __event_emitter__(
             {
                 "type": "status",  # We set the type here
                 "data": {
-                    "description": f"Finding files in {base_dir}",
+                    "description": f"Finding files in {base_dir}.",
                     "done": False,
                     "hidden": False,
                 },
@@ -169,36 +168,40 @@ class Tools:
 
             full = os.path.join(base_dir, fname)
             rel = os.path.relpath(full, base_dir)
-            results.append(rel)
+            results.append(full if abs_path else rel)
             count += 1
 
             await __event_emitter__(
-            {
-                "type": "status",  # We set the type here
-                "data": {
-                    "description": f"Found {len(results)} files from {base_dir}",
-                    "done": True,
-                    "hidden": False,
-                },
-                # Note done is False here indicating we are still emitting statuses
-            }
-        )
+                {
+                    "type": "status",  # We set the type here
+                    "data": {
+                        "description": f"Found {len(results)} files from {base_dir}.",
+                        "done": False,
+                        "hidden": False,
+                    },
+                    # Note done is False here indicating we are still emitting statuses
+                }
+            )
 
-            if 0 <= limit == count:
+            if limit >= 0 and count >= limit:
                 is_exceeded = True
                 break
 
         res = {
             "results": results,
+            "time_elapsed": (datetime.now() - start_time).total_seconds(),
         }
+        
         if is_exceeded:
-            res["response_message"] = f"Limit exceeded. Returned {len(results)}/{len(all_files)} files"
+            res["response_message"] = f"Limit exceeded. Returned {len(results)}/{len(all_files)} files."
+        else:
+            res["response_message"] = f"Found {len(results)} files from {base_dir}."
 
         await __event_emitter__(
             {
                 "type": "status",  # We set the type here
                 "data": {
-                    "description": f"Found {len(results)} files from {base_dir}",
+                    "description": f"Found {len(results)} files from {base_dir}.",
                     "done": True,
                     "hidden": False,
                 },
@@ -231,10 +234,13 @@ class Tools:
             - 'response_message': Response message.
             - 'time_elapsed': Time elapsed in seconds.
         """
+        if path in [None, ""]:
+            path = self.base_dir
+            
         if not os.path.exists(path):
             return {
                 "results": [],
-                "response_message": f"Path `{path}` does not exist",
+                "response_message": f"Path `{path}` does not exist.",
                 "time_elapsed": 0.0
             }
         if exclude_regex_patterns is None:
@@ -249,7 +255,7 @@ class Tools:
             {
                 "type": "status",
                 "data": {
-                    "description": f"Searching for {regex_pattern} in {root}",
+                    "description": f"Searching for {', '.join(regex_pattern)} in {root}.",
                     "done": False,
                     "hidden": False,
                 },
@@ -279,7 +285,7 @@ class Tools:
                 )
                 return {
                     "results": results,
-                    "response_message": f"Time limit exceeded after {level} levels. Found {len(results)} files",
+                    "response_message": f"Time limit exceeded after {level} levels. Found {len(results)} files.",
                     "time_elapsed": (datetime.now() - start_time).total_seconds(),
                 }
             
@@ -292,7 +298,7 @@ class Tools:
                 {
                     "type": "status",
                     "data": {
-                        "description": f"Searching for {', '.join([p.pattern for p in pat]).rstrip(', ')} in {current_dir}",
+                        "description": f"Searching for {', '.join([p.pattern for p in pat])} in {current_dir}.",
                         "done": False,
                         "hidden": False,
                     },
@@ -341,7 +347,9 @@ class Tools:
         Read the contents of the given files using `open()` function. Cannot read PDFs.
 
         :param file_paths: List of file paths to read.
-        :return: Dict with "results" (list of file contents), "response_message".
+        :return: Dict with:
+            - 'results': Dict with file paths as keys and file contents as values.
+            - 'response_message': Response message.
         """
         if isinstance(file_paths, str):
             file_paths = [file_paths]
@@ -353,7 +361,7 @@ class Tools:
                 {
                     "type": "status",
                     "data": {
-                        "description": f"Extracting {file_path}",
+                        "description": f"Extracting {file_path}.",
                         "done": False,
                         "hidden": False,
                     },
@@ -373,7 +381,7 @@ class Tools:
             {
                 "type": "status",
                 "data": {
-                    "description": f"Extracted {len(results)} files" if len(results) > 1 else f"Extracted {Path(file_path).name}",
+                    "description": f"Extracted {len(results)} files" if len(results) > 1 else f"Extracted {Path(file_path).name}.",
                     "done": True,
                     "hidden": False,
                 },
@@ -382,7 +390,7 @@ class Tools:
                 
         return {
             "results": results,
-            "response_message": f"Read {len(results)} files"
+            "response_message": f"Read {len(results)} files."
         }
 
 
@@ -390,33 +398,29 @@ class Tools:
         self, 
         paths: list[str], 
         regex_patterns: list[str], 
-        exclude_patterns: list[str] = None,
-        trailing_lines: int = 0, 
+        context_lines: int = 0, 
         time_limit: float = 5.0, 
         __event_emitter__=None
     ) -> dict[str, list[list[str]] | str]:
         """
         Search each file in `paths` for lines matching ANY of `regex_patterns`,
-        optionally skipping files whose path matches ANY of `exclude_patterns`.
         Returns, for each file that matches, a list of line‑blocks (each block is
-        up to `trailing_lines` before/after the match). If a file cannot be read,
+        up to `context_lines` before/after the match). If a file cannot be read,
         its value is an error string.
 
         :param paths:            List of file paths to search.
         :param regex_patterns:   List of regex strings to match lines against.
-        :param exclude_patterns: List of regex strings; skip any file path matching these.
-        :param trailing_lines:   Number of context lines before and after each match.
+        :param context_lines:   Number of context lines before and after each match.
         :param time_limit:       Seconds after which to abort early (−1 = no limit).
-        :return:                 Dict with
+        :return:                 Dict with:
             - 'results': Dict with file paths as keys and lists of line blocks as values.
             - 'response_message': Response message.
             - 'time_elapsed': Time elapsed in seconds.
         """
         start_time = datetime.now()
         include_re = [re.compile(p) for p in regex_patterns]
-        exclude_re = [re.compile(p) for p in (exclude_patterns or [])]
         
-        results: Dict[str, Union[List[list[str]], str]] = {}
+        results: dict[str, List[list[str]] | str] = {}
 
         for rel_path in paths:
             # --- Time limit check ---
@@ -425,29 +429,28 @@ class Tools:
                 await __event_emitter__({
                     "type": "status",
                     "data": {
-                        "description": f"Time limit exceeded; processed {len(results)} files",
+                        "description": f"Time limit exceeded; processed {len(results)} files.",
                         "done": True,
                         "hidden": False
                     }
                 })
-                break
+                return {
+                    "results": results,
+                    "response_message": f"Time limit exceeded. processed {len(results)} files.",
+                    "time_elapsed": (datetime.now() - start_time).total_seconds()
+                }
 
             abs_path = os.path.abspath(rel_path)
 
-            # --- Exclude patterns ---
-            if any(p.search(abs_path) for p in exclude_re):
-                continue
-
             # --- Emit status per file ---
-            if __event_emitter__:
-                await __event_emitter__({
-                    "type": "status",
-                    "data": {
-                        "description": f"Extracting lines from {abs_path}",
-                        "done": False,
-                        "hidden": False
-                    }
-                })
+            await __event_emitter__({
+                "type": "status",
+                "data": {
+                    "description": f"Extracting lines from {abs_path}.",
+                    "done": False,
+                    "hidden": False
+                }
+            })
 
             # --- Read file ---
             try:
@@ -479,7 +482,7 @@ class Tools:
         await __event_emitter__({
             "type": "status",
             "data": {
-                "description": f"Completed extraction for {len(results)} files",
+                "description": f"Found {len(results)}/{len(paths)} files containing matches.",
                 "done": True,
                 "hidden": False
             }
@@ -487,7 +490,7 @@ class Tools:
 
         return {
             "results": results,
-            "response_message": f"Processed {len(results)} files",
+            "response_message": f"Processed {len(paths)} files. Found {len(results)} files containing matches.",
             "time_elapsed": (datetime.now() - start_time).total_seconds()
         }
         
