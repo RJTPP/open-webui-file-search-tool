@@ -453,9 +453,19 @@ class Tools:
             })
 
             # --- Read file ---
+            matches = []
+            
             try:
-                with open(abs_path, "r", encoding="utf-8") as f:
+                with open(abs_path, "r", encoding="utf-8", errors="replace") as f:
                     lines = f.readlines()
+
+                for idx, line in enumerate(lines):
+                    if any(r.search(line) for r in include_re):
+                        start = max(0, idx - context_lines)
+                        end = min(len(lines), idx + context_lines + 1)
+                        block = "".join(lines[start:end])
+                        matches.append(block)
+                        
             except FileNotFoundError:
                 results[rel_path] = "[File not found]"
                 continue
@@ -465,14 +475,6 @@ class Tools:
             except Exception as e:
                 results[rel_path] = f"[Error: {e}]"
                 continue
-
-            # --- Search for matches & collect contexts ---
-            matches: List[list[str]] = []
-            for idx, line in enumerate(lines):
-                if any(r.search(line) for r in include_re):
-                    start = max(0, idx - trailing_lines)
-                    end = min(len(lines), idx + trailing_lines + 1)
-                    matches.append(lines[start:end])
 
             if matches:
                 results[rel_path] = matches
