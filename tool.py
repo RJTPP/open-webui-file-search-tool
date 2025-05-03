@@ -268,6 +268,16 @@ class Tools:
             
             # time‑quit check
             if time_limit != -1 and (datetime.now() - start_time).total_seconds() > time_limit:
+                await __event_emitter__(
+                    {
+                        "type": "status",
+                        "data": {
+                            "description": f"Time limit exceeded. Found {len(results)} files",
+                            "done": True,
+                            "hidden": False,
+                        },
+                    }
+                )
                 return {
                     "results": results,
                     "response_message": f"Time limit exceeded after {level} levels. Found {len(results)} files",
