@@ -374,3 +374,110 @@ class Tools:
             "results": results,
             "response_message": f"Read {len(results)} files"
         }
+
+
+    async def search_file_lines(
+        self, 
+        paths: list[str], 
+        regex_patterns: list[str], 
+        exclude_patterns: list[str] = None,
+        trailing_lines: int = 0, 
+        time_limit: float = 5.0, 
+        __event_emitter__=None
+    ) -> dict[str, list[list[str]] | str]:
+        """
+        Search each file in `paths` for lines matching ANY of `regex_patterns`,
+        optionally skipping files whose path matches ANY of `exclude_patterns`.
+        Returns, for each file that matches, a list of line‑blocks (each block is
+        up to `trailing_lines` before/after the match). If a file cannot be read,
+        its value is an error string.
+
+        :param paths:            List of file paths to search.
+        :param regex_patterns:   List of regex strings to match lines against.
+        :param exclude_patterns: List of regex strings; skip any file path matching these.
+        :param trailing_lines:   Number of context lines before and after each match.
+        :param time_limit:       Seconds after which to abort early (−1 = no limit).
+        :return:                 Dict with
+            - 'results': Dict with file paths as keys and lists of line blocks as values.
+            - 'response_message': Response message.
+            - 'time_elapsed': Time elapsed in seconds.
+        """
+        start_time = datetime.now()
+        include_re = [re.compile(p) for p in regex_patterns]
+        exclude_re = [re.compile(p) for p in (exclude_patterns or [])]
+        
+        results: Dict[str, Union[List[list[str]], str]] = {}
+
+        for rel_path in paths:
+            # --- Time limit check ---
+            if time_limit >= 0 and (datetime.now() - start_time).total_seconds() > time_limit:
+                # emit final status
+                await __event_emitter__({
+                    "type": "status",
+                    "data": {
+                        "description": f"Time limit exceeded; processed {len(results)} files",
+                        "done": True,
+                        "hidden": False
+                    }
+                })
+                break
+
+            abs_path = os.path.abspath(rel_path)
+
+            # --- Exclude patterns ---
+            if any(p.search(abs_path) for p in exclude_re):
+                continue
+
+            # --- Emit status per file ---
+            if __event_emitter__:
+                await __event_emitter__({
+                    "type": "status",
+                    "data": {
+                        "description": f"Extracting lines from {abs_path}",
+                        "done": False,
+                        "hidden": False
+                    }
+                })
+
+            # --- Read file ---
+            try:
+                with open(abs_path, "r", encoding="utf-8") as f:
+                    lines = f.readlines()
+            except FileNotFoundError:
+                results[rel_path] = "[File not found]"
+                continue
+            except PermissionError:
+                results[rel_path] = "[Permission denied]"
+                continue
+            except Exception as e:
+                results[rel_path] = f"[Error: {e}]"
+                continue
+
+            # --- Search for matches & collect contexts ---
+            matches: List[list[str]] = []
+            for idx, line in enumerate(lines):
+                if any(r.search(line) for r in include_re):
+                    start = max(0, idx - trailing_lines)
+                    end = min(len(lines), idx + trailing_lines + 1)
+                    matches.append(lines[start:end])
+
+            if matches:
+                results[rel_path] = matches
+
+        # --- Final status emit ---
+
+        await __event_emitter__({
+            "type": "status",
+            "data": {
+                "description": f"Completed extraction for {len(results)} files",
+                "done": True,
+                "hidden": False
+            }
+        })
+
+        return {
+            "results": results,
+            "response_message": f"Processed {len(results)} files",
+            "time_elapsed": (datetime.now() - start_time).total_seconds()
+        }
+        
