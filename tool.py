@@ -7,7 +7,7 @@ repo_url: https://github.com/RJTPP/open-webui-file-search-tool
 version: 0.0.1
 license: MIT
 
-description: A tool to search for files in a directory.
+description: An interactive tool for navigating directories, listing files, searching filenames and content using regex, and reading file contents.
 """
 
 import os
