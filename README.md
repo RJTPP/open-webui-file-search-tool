@@ -1,6 +1,6 @@
 # 📂 File Search Tool
 
-An interactive [OpenWebUI](https://openwebui.com) plugin for searching, reading, and navigating files directly from the UI — with optional regex filtering, status reporting, recursion depth control, and more.
+An interactive [OpenWebUI](https://openwebui.com/t/rjtpp/file_search_tool) plugin for searching, reading, and navigating files directly from the UI — with optional regex filtering, status reporting, recursion depth control, and more.
 
 ## ✨ Features
 
