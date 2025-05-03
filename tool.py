@@ -213,7 +213,7 @@ class Tools:
     async def search_file_name(
         self,
         regex_pattern: list[str],
-        exclude_regex_patterns: list[str] = [],
+        exclude_regex_patterns: list[str] = None,
         path: str = None,
         time_limit: int = 5,
         max_level: int = -1,
@@ -238,7 +238,8 @@ class Tools:
                 "response_message": f"Path `{path}` does not exist",
                 "time_elapsed": 0.0
             }
-        
+        if exclude_regex_patterns is None:
+            exclude_regex_patterns = []
         start_time = datetime.now()
         pat = [re.compile(p) for p in regex_pattern]
         ex_pat = [re.compile(p) for p in exclude_regex_patterns]
