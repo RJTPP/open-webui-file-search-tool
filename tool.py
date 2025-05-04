@@ -11,13 +11,11 @@ description: An interactive tool for navigating directories, listing files, sear
 """
 
 import os
-import json
 from pathlib import Path
 import re
 from pydantic import BaseModel, Field
 from datetime import datetime
 from collections import deque
-import itertools
 
 def pwd():
     return os.getcwd()
@@ -219,6 +217,7 @@ class Tools:
         path: str = None,
         time_limit: int = 5,
         max_level: int = -1,
+        search_mode: str = "bfs",
         __event_emitter__=None
     ) -> dict[str, list[str] | None]:
         """
@@ -229,11 +228,16 @@ class Tools:
         :param path:          Directory to start from (defaults to base_dir).
         :param time_limit:    Seconds after which to abort (-1 = no limit).
         :param max_level:     Depth to recurse: 0 = only root, 1 = root+its subdirs, -1 = unlimited.
+        :param search_mode:   Search mode: "bfs" (recommended) or "dfs".
         :return:              Dict with
             - 'results': List of files matching regex. Sorted alphabetically.
             - 'response_message': Response message.
             - 'time_elapsed': Time elapsed in seconds.
         """
+        search_mode = search_mode.lower()
+        if search_mode not in ["bfs", "dfs"]:
+            search_mode = "bfs"
+
         if path in [None, ""]:
             path = self.base_dir
             
@@ -263,10 +267,10 @@ class Tools:
         )
         
         results: list[str] = []
-        queue = deque([(root, 0)])  # (directory, current_level)
+        queue = deque([(root, 0)]) if search_mode == "bfs" else [(root, 0)]  # (directory, current_level)
         
         while queue:
-            current_dir, level = queue.popleft()
+            current_dir, level = queue.popleft() if search_mode == "bfs" else queue.pop()
             
             if any(p.search(current_dir) for p in ex_pat):
                 continue  # skips everything for this directory
