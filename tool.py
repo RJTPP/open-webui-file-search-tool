@@ -4,7 +4,7 @@ author: RJTPP
 author_url: https://github.com/RJTPP
 git_url: https://github.com/RJTPP/open-webui-file-search-tool.git
 repo_url: https://github.com/RJTPP/open-webui-file-search-tool
-version: 0.0.2-beta
+version: 0.0.2-dev
 license: MIT
 
 description: An interactive tool for navigating directories, listing files, searching filenames and content using regex, and reading file contents.
