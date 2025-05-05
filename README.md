@@ -6,7 +6,6 @@ An interactive [OpenWebUI](https://openwebui.com/t/rjtpp/file_search_tool) plugi
 
 - 📁 List files in a directory (with pagination, sorting, and hidden file support)
 - 🔍 Search filenames using one or multiple **regex patterns**
-- ❌ Exclude paths using **regex exclusion filters**
 - 🧠 Read full text files or extract matching lines with context
 - 🧭 Change working directory and retrieve current path
 
