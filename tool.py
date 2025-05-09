@@ -16,33 +16,96 @@ import re
 from pydantic import BaseModel, Field
 from datetime import datetime
 from collections import deque
+from typing import Optional, Literal
 
 def pwd():
-    return os.getcwd()
+    current_dir = os.getcwd()
+    if not os.path.exists(current_dir):
+        current_dir = "/"
+    return current_dir
+
+
+def is_path_excluded(path: str, exclude_paths: list[str]) -> bool:
+    """
+    Returns True if the given path is excluded by any path in exclude_paths.
+    Handles both file and directory exclusions robustly.
+    """
+    path = str(Path(path).resolve(strict=False))
+    for exclude_path in exclude_paths:
+        exc = str(Path(exclude_path).resolve(strict=False))
+        # Exclude if path is exactly exc, or is inside exc (with / boundary)
+        if path == exc or path.startswith(exc + os.sep):
+            return True
+    return False
+
+
+def cleanup_path_list(path_list: list[str] | str) -> list[str]:
+    """
+    Cleans up a list of paths or a comma-separated string of paths.
+    Strips whitespace and resolves to absolute paths (non-strict).
+    """
+    cleaned_list = []
+    if isinstance(path_list, str):
+        path_list = path_list.replace(" ", "")
+        if path_list == "":
+            return cleaned_list
+        path_list = path_list.split(",") if "," in path_list else [path_list]
+    elif not isinstance(path_list, list):
+        return cleaned_list
+    for path in path_list:
+        # Only add non-empty strings
+        if path and str(path).strip():
+            cleaned_list.append(str(Path(path).resolve(strict=False)))
+    return cleaned_list
 
 
 class Tools:
     class Valves(BaseModel):
         BASE_DIR: str = Field(
-            default=None,
+            default=pwd(),
             description="The base directory to start the search from. Defaults to the current directory.",
+        )
+        EXCLUDE_PATHS: str = Field(
+            default="",
+            description="Absolute paths to exclude from the search. Separate multiple paths with a comma. Example: `/path/to/exclude1,/path/to/exclude2`.",
         )
 
     def __init__(self):
         """Initialize the Tool."""
         self.valves = self.Valves()
         self.root_path = Path(pwd()).root
-        self.init_dir = Path(self.valves.BASE_DIR).absolute().as_posix() if self.valves.BASE_DIR else pwd()
-        self.base_dir = self.init_dir
+        self.base_dir = None
+
+    @property
+    def init_dir(self):
+        return str(Path(self.valves.BASE_DIR).resolve(strict=False) if self.valves.BASE_DIR else pwd())
+
+    @property
+    def exclude_paths(self):
+        # Always return a list of absolute paths, cleaned up
+        return cleanup_path_list(self.valves.EXCLUDE_PATHS)
 
     def get_current_dir(self, __event_emitter__=None) -> dict[str, str]:
         """
         Get the current directory. Equivalent to `pwd`.
 
         :return: Dict with:
-            - 'current_dir': Absolute path of the current directory.
+            - 'result': Absolute path of the current directory.
         """
-        return { "current_dir": self.base_dir}
+        if not self.base_dir:
+            self.base_dir = self.init_dir
+        return { "result": self.base_dir}
+
+
+    def get_exclude_paths(self, __event_emitter__=None) -> dict[str, list[str]]:
+        """
+        Get the exclude paths.
+
+        :return: Dict with:
+            - 'result': List of exclude paths.
+        """
+        return { "result": self.exclude_paths }
+
 
     async def change_dir(self, path: str, __event_emitter__=None) -> dict[str, str | bool]:
         """
@@ -56,7 +119,7 @@ class Tools:
         if not path:
             path = self.init_dir
             
-        if not os.path.exists(path):
+        if not Path(path).exists():
             await __event_emitter__(
                 {
                     "type": "status",
@@ -70,6 +133,22 @@ class Tools:
             return {
                 "success": False,
                 "response_message": f"Directory `{path}` does not exist. Reverting to `{self.base_dir}`."
+            }
+
+        elif is_path_excluded(path, self.exclude_paths):
+            await __event_emitter__(
+                {
+                    "type": "status",
+                    "data": {
+                        "description": f"Directory {path} is excluded by user.",
+                        "done": True,
+                        "hidden": False,
+                    },
+                }
+            )
+            return {
+                "success": False,
+                "response_message": f"Permission denied by user. Reverting to `{self.base_dir}`."
             }
         
         self.base_dir = Path(path).absolute().as_posix()
@@ -101,7 +180,9 @@ class Tools:
         """
         def _sub_get_path_type(path: str) -> str:
             if not os.path.exists(path):
-                return "not found"
+                return "[NOT_EXISTS]"
+            if is_path_excluded(path, self.exclude_paths):
+                return "[EXCLUDED]"
             file_type = "unknown"
             if os.path.isdir(path):
                 file_type = "directory"
@@ -114,7 +195,7 @@ class Tools:
         return { "path_type": [(p, _sub_get_path_type(p)) for p in paths]}
 
 
-    async def list_files(
+    async def list_file_paths(
         self,
         base_dir: str = None,
         show_hidden: bool = False,
@@ -124,7 +205,7 @@ class Tools:
         __event_emitter__=None,
     ) -> dict[str, list[str] | None]:
         """
-        List files in the given directory.
+        List file paths in the given directory, including directories and symbolic links.
 
         :param base_dir: Base directory to start the search from.
         :param show_hidden: Include hidden files (those starting with '.').
@@ -138,7 +219,7 @@ class Tools:
         """
         base_dir = os.path.abspath(base_dir) if base_dir else self.base_dir
         if base_dir == "":
-            base_dir = pwd()
+            base_dir = self.base_dir
         results: list[str] = []
         count = 0
         is_exceeded = False
@@ -166,6 +247,10 @@ class Tools:
 
             full = os.path.join(base_dir, fname)
             rel = os.path.relpath(full, base_dir)
+            
+            if is_path_excluded(full, self.exclude_paths):
+                continue
+            
             results.append(full if abs_path else rel)
             count += 1
 
@@ -217,7 +302,7 @@ class Tools:
         path: str = None,
         time_limit: int = 5,
         max_level: int = -1,
-        search_mode: str = "bfs",
+        search_mode: Literal["bfs", "dfs"] = "bfs",
         __event_emitter__=None
     ) -> dict[str, list[str] | None]:
         """
@@ -234,7 +319,6 @@ class Tools:
             - 'response_message': Response message.
             - 'time_elapsed': Time elapsed in seconds.
         """
-        search_mode = search_mode.lower()
         if search_mode not in ["bfs", "dfs"]:
             search_mode = "bfs"
 
@@ -272,6 +356,9 @@ class Tools:
         while queue:
             current_dir, level = queue.popleft() if search_mode == "bfs" else queue.pop()
             
+            if is_path_excluded(current_dir, self.exclude_paths):
+                continue
+
             if any(p.search(current_dir) for p in ex_pat):
                 continue  # skips everything for this directory
             
@@ -371,6 +458,9 @@ class Tools:
                     },
                 }
             )
+            if is_path_excluded(file_path, self.exclude_paths):
+                results[file_path] = "[Excluded]"
+                continue
             try:
                 with open(file_path, "r") as file:
                     results[file_path] = file.read()
@@ -457,6 +547,10 @@ class Tools:
             })
 
             # --- Read file ---
+            if is_path_excluded(abs_path, self.exclude_paths):
+                results[rel_path] = "[Excluded]"
+                continue
+            
             matches = []
             
             try:
